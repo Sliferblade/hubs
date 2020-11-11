@@ -50,6 +50,9 @@ export default class DialogAdapter {
     this._blockedClients = new Map();
     this.type = "dialog";
     this.occupants = {}; // This is a public field
+    this._sendIceParameters = {};
+    this._recvIceParameters = {};
+    this.scene = document.querySelector("a-scene");
   }
 
   setForceTcp(forceTcp) {
@@ -99,6 +102,62 @@ export default class DialogAdapter {
     this._onOccupantMessage = messageListener;
   }
 
+  async getServerStats() {
+    const result = {};
+    try {
+      if (this._sendTransport && !this._sendTransport._closed && this._sendTransport._connectionState == "connected") {
+        result[this._sendTransport.id] = {};
+        result[this._sendTransport.id]["name"] = "Send";
+        result[this._sendTransport.id]["stats"] = await this._protoo.request("getTransportStats", {
+          transportId: this._sendTransport.id
+        });
+        result[this._sendTransport.id]["producers"] = {};
+        for (const producer of this._sendTransport._producers) {
+          const id = producer[0];
+          result[this._sendTransport.id]["producers"][id] = await this._protoo.request("getProducerStats", {
+            producerId: id
+          });
+        }
+      }
+      if (this._recvTransport && !this._recvTransport._closed && this._recvTransport._connectionState == "connected") {
+        result[this._recvTransport.id] = {};
+        result[this._recvTransport.id]["name"] = "Receive";
+        result[this._recvTransport.id]["stats"] = await this._protoo.request("getTransportStats", {
+          transportId: this._recvTransport.id
+        });
+        result[this._recvTransport.id]["consumers"] = {};
+        for (const consumer of this._recvTransport._consumers) {
+          const id = consumer[0];
+          result[this._recvTransport.id]["consumers"][id] = await this._protoo.request("getConsumerStats", {
+            consumerId: id
+          });
+        }
+      }
+      return result;
+    } catch (e) {
+      this.scene.emit("rtc_event", {
+        level: "error",
+        tag: "Adapter",
+        msg: `Error getting the server status: ${e}`
+      });
+      return { error: `Error getting the server status: ${e}` };
+    }
+  }
+
+  async restartSendICE() {
+    if (this._sendTransport !== null && !this._sendTransport._closed) {
+      this.scene.emit("rtc_event", { level: "log", tag: "rtc", msg: "Restarting send transport ICE" });
+      this._sendTransport.restartIce({ iceParameters: this._sendIceParameters });
+    }
+  }
+
+  async restartRecvICE() {
+    if (this._recvTransport !== null && !this._recvTransport._closed) {
+      this.scene.emit("rtc_event", { level: "log", tag: "rtc", msg: "Restarting receive transport ICE" });
+      this._recvTransport.restartIce({ iceParameters: this._recvIceParameters });
+    }
+  }
+
   async connect() {
     const urlWithParams = new URL(this._serverUrl);
     urlWithParams.searchParams.append("roomId", this._roomId);
@@ -109,17 +168,29 @@ export default class DialogAdapter {
 
     await new Promise(res => {
       this._protoo.on("open", async () => {
+        this.scene.emit("rtc_event", { level: "info", tag: "Signaling", msg: "Open" });
         this._closed = false;
         await this._joinRoom();
         res();
       });
     });
 
-    this._protoo.on("disconnected", () => this.disconnect());
-    this._protoo.on("close", () => this.disconnect());
+    this._protoo.on("disconnected", () => {
+      this.scene.emit("rtc_event", { level: "info", tag: "Signaling", msg: "Diconnected" });
+      this.disconnect();
+    });
+    this._protoo.on("close", () => {
+      this.scene.emit("rtc_event", { level: "info", tag: "Signaling", msg: "Close" });
+      this.disconnect();
+    });
 
     // eslint-disable-next-line no-unused-vars
     this._protoo.on("request", async (request, accept, reject) => {
+      this.scene.emit("rtc_event", {
+        level: "info",
+        tag: "Signaling",
+        msg: `Request [${request.method}]: ${request.data}`
+      });
       debug('proto "request" event [method:%s, data:%o]', request.method, request.data);
 
       switch (request.method) {
@@ -162,6 +233,11 @@ export default class DialogAdapter {
               }
             }
           } catch (err) {
+            this.scene.emit("rtc_event", {
+              level: "error",
+              tag: "Adapter",
+              msg: `Error: ${err}`
+            });
             error('"newConsumer" request failed:%o', err);
 
             throw err;
@@ -173,6 +249,11 @@ export default class DialogAdapter {
     });
 
     this._protoo.on("notification", notification => {
+      this.scene.emit("rtc_event", {
+        level: "debug",
+        tag: "Signaling",
+        msg: `Notification [${notification.method}]: ${JSON.stringify(notification.data)}`
+      });
       debug('proto "notification" event [method:%s, data:%o]', notification.method, notification.data);
 
       switch (notification.method) {
@@ -280,6 +361,11 @@ export default class DialogAdapter {
   }
 
   removeConsumer(consumerId) {
+    this.scene.emit("rtc_event", {
+      level: "info",
+      tag: "RTC",
+      msg: `Consumer removed: ${consumerId}`
+    });
     this._consumers.delete(consumerId);
   }
 
@@ -316,7 +402,14 @@ export default class DialogAdapter {
       const requests = this._pendingMediaRequests.get(clientId);
       const promise = new Promise((resolve, reject) => (requests[kind] = { resolve, reject }));
       requests[kind].promise = promise;
-      promise.catch(e => console.warn(`${clientId} getMediaStream Error`, e));
+      promise.catch(e => {
+        this.scene.emit("rtc_event", {
+          level: "error",
+          tag: "Adapter",
+          msg: `getMediaStream error: ${e}`
+        });
+        console.warn(`${clientId} getMediaStream Error`, e);
+      });
       return promise;
     }
   }
@@ -366,6 +459,7 @@ export default class DialogAdapter {
         sctpCapabilities: undefined
       });
 
+      this._sendIceParameters = sendTransportInfo.iceParameters;
       this._sendTransport = this._mediasoupDevice.createSendTransport({
         id: sendTransportInfo.id,
         iceParameters: sendTransportInfo.iceParameters,
@@ -382,6 +476,33 @@ export default class DialogAdapter {
         callback,
         errback // eslint-disable-line no-shadow
       ) => {
+        this.scene.emit("rtc_event", {
+          level: "info",
+          tag: "RTC",
+          msg: `Send transport [connect]`
+        });
+        this._sendTransport.observer.on("close", () => {
+          this.scene.emit("rtc_event", {
+            level: "info",
+            tag: "RTC",
+            msg: `Send transport [close]`
+          });
+        });
+        this._sendTransport.observer.on("newproducer", producer => {
+          this.scene.emit("rtc_event", {
+            level: "info",
+            tag: "RTC",
+            msg: `Send transport [newproducer]: ${producer.id}`
+          });
+        });
+        this._sendTransport.observer.on("newconsumer", consumer => {
+          this.scene.emit("rtc_event", {
+            level: "info",
+            tag: "RTC",
+            msg: `Send transport [newconsumer]: ${consumer.id}`
+          });
+        });
+
         this._protoo
           .request("connectWebRtcTransport", {
             transportId: this._sendTransport.id,
@@ -391,7 +512,20 @@ export default class DialogAdapter {
           .catch(errback);
       });
 
+      this._sendTransport.on("connectionstatechange", connectionState => {
+        this.scene.emit("rtc_event", {
+          level: "info",
+          tag: "RTC",
+          msg: `Send transport [connectionstatechange]: ${connectionState}`
+        });
+      });
+
       this._sendTransport.on("produce", async ({ kind, rtpParameters, appData }, callback, errback) => {
+        this.scene.emit("rtc_event", {
+          level: "info",
+          tag: "RTC",
+          msg: `Send transport [produce]: ${kind}`
+        });
         try {
           // eslint-disable-next-line no-shadow
           const { id } = await this._protoo.request("produce", {
@@ -403,6 +537,11 @@ export default class DialogAdapter {
 
           callback({ id });
         } catch (error) {
+          this.scene.emit("rtc_event", {
+            level: "error",
+            tag: "Signaling",
+            msg: `[produce] error: ${error}`
+          });
           errback(error);
         }
       });
@@ -415,6 +554,7 @@ export default class DialogAdapter {
         sctpCapabilities: undefined
       });
 
+      this._recvIceParameters = recvTransportInfo.iceParameters;
       this._recvTransport = this._mediasoupDevice.createRecvTransport({
         id: recvTransportInfo.id,
         iceParameters: recvTransportInfo.iceParameters,
@@ -429,6 +569,33 @@ export default class DialogAdapter {
         callback,
         errback // eslint-disable-line no-shadow
       ) => {
+        this.scene.emit("rtc_event", {
+          level: "info",
+          tag: "RTC",
+          msg: `Receive transport [connect]`
+        });
+        this._recvTransport.observer.on("close", () => {
+          this.scene.emit("rtc_event", {
+            level: "info",
+            tag: "RTC",
+            msg: `Receive transport [close]`
+          });
+        });
+        this._recvTransport.observer.on("newproducer", producer => {
+          this.scene.emit("rtc_event", {
+            level: "info",
+            tag: "RTC",
+            msg: `Receive transport [newproducer]: ${producer.id}`
+          });
+        });
+        this._recvTransport.observer.on("newconsumer", consumer => {
+          this.scene.emit("rtc_event", {
+            level: "info",
+            tag: "RTC",
+            msg: `Receive transport [newconsumer]: ${consumer.id}`
+          });
+        });
+
         this._protoo
           .request("connectWebRtcTransport", {
             transportId: this._recvTransport.id,
@@ -436,6 +603,14 @@ export default class DialogAdapter {
           })
           .then(callback)
           .catch(errback);
+      });
+
+      this._recvTransport.on("connectionstatechange", connectionState => {
+        this.scene.emit("rtc_event", {
+          level: "info",
+          tag: "RTC",
+          msg: `Receive transport [connectionstatechange]: ${connectionState}`
+        });
       });
 
       const { peers } = await this._protoo.request("join", {
@@ -470,6 +645,11 @@ export default class DialogAdapter {
         this.createMissingProducers(this._localMediaStream);
       }
     } catch (err) {
+      this.scene.emit("rtc_event", {
+        level: "error",
+        tag: "Adapter",
+        msg: `Join room failed: ${error}`
+      });
       error("_joinRoom() failed:%o", err);
 
       this.disconnect();
@@ -481,6 +661,12 @@ export default class DialogAdapter {
   }
 
   createMissingProducers(stream) {
+    this.scene.emit("rtc_event", {
+      level: "info",
+      tag: "RTC",
+      msg: `Creating missing producers`
+    });
+
     if (!this._sendTransport) return;
     let sawAudio = false;
     let sawVideo = false;
@@ -596,6 +782,7 @@ export default class DialogAdapter {
     // Close protoo Peer, though may already be closed if this is happening due to websocket breakdown
     if (this._protoo && this._protoo.connected) {
       this._protoo.close();
+      this.scene.emit("rtc_event", { level: "info", tag: "Signaling", msg: "[close]" });
     }
 
     // Close mediasoup Transports.
@@ -627,6 +814,11 @@ export default class DialogAdapter {
           );
         }
 
+        this.scene.emit("rtc_event", {
+          level: "warn",
+          tag: "Adapter",
+          msg: `Error during reconnect, retrying: ${error}`
+        });
         console.warn("Error during reconnect, retrying.");
         console.warn(error);
 

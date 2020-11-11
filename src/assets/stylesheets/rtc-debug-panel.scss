@@ -1,0 +1,252 @@
+@import 'shared.scss';
+
+$error-panel-color: #ff829f7e;
+$disabled-panel-color: #ffba827e;
+$panel-background-color: rgba(20,20,20,0.5);
+$panel-border-color: rgba(255,255,255,0.5);
+
+:local(.collapsible-button) {
+  background-color: transparent;
+  border-color: transparent;
+  color: white;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+:local(.help-button) {
+  color: black;
+  background-color: white;
+  border-radius: 50%;
+  font-weight: bold;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  cursor: pointer;
+  align-self: center;
+  font-size: 10px;
+}
+
+:local(.collapsible-button):after {
+  content: '\2212';
+  color: white;
+  font-weight: bold;
+  float: left;
+  align-self: stretch;
+  padding-right: 6px;
+}
+
+:local(.collapsible-button).collapsed:after {
+  content: "\002B";
+}
+
+:local(.content) {
+  padding: 0 18px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+  background-color: #f1f1f1;
+}
+
+:local(.rtc-debug-panel-root) {
+  pointer-events: none;
+  display: flex;
+  flex-flow: row nowrap;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  top: 76px;
+  bottom: 76px;
+  position: absolute;
+
+  @media(max-width: 500px) {
+    flex-flow: column nowrap;
+    width: 100%;
+    justify-content: stretch;
+  }
+}
+
+:local(.rtc-log-container) {
+  pointer-events: auto;
+  width: 40%;
+  overflow-y: auto;
+  display: flex;
+  align-self: end;
+  max-height: 200px;
+  flex: 1 0 auto;
+
+  @media(max-width: 500px) {
+    width: 100%;
+    align-self: baseline;
+    flex: 0 1 auto;
+  }
+}
+
+:local(.rtc-status-container) {
+  display: flex;
+  z-index: 1;
+  overflow-y: auto;
+  pointer-events: auto;
+  width: 30%;
+  align-self: flex-start;
+  max-height: 100%;
+
+  @media(max-width: 500px) {
+    width: 100%;
+    max-height: 33%;
+    align-self: baseline;
+    flex: 0 1 auto;
+  }
+}
+
+:local(.rtc-status-collapsible-container) {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+:local(.rtc-status-collapsible-container-root) {
+  @extend :local(.rtc-status-collapsible-container);
+  flex-flow: column nowrap;
+  overflow-y: auto;
+  justify-content: flex-start;
+}
+
+:local(.rtc-status-collapsible-container).collapsed {
+  display: none;
+}
+
+:local(.rtc-status-panel) {
+  background-color: $panel-background-color;
+  border-radius: 4px;
+  padding: 4px;
+  overflow-y: auto;
+  pointer-events: auto;
+  display: flex;
+  flex-flow: column;
+  border: 2px;  
+  border-color: $panel-border-color;
+  border-style: solid;
+  margin: 4px;
+  flex: 1 1 auto;
+}
+
+:local(.rtc-status-panel).collapsed {
+  display: none;
+}
+
+:local(.rtp-tile-container-row) {
+  display: flex;
+  flex-flow: row;
+  flex: 0 1 auto;
+}
+
+:local(.rtp-tile-container-column) {
+  display: flex;
+  flex-flow: column;
+  flex: 0 1 auto;
+}
+
+:local(.rtp-container-column-border) {
+  @extend :local(.rtp-tile-container-column);
+  border: 2px;  
+  border-color: $panel-border-color;
+  border-style: solid;
+  padding: 4px;
+  margin: 4px;
+  border-radius: 5px;
+}
+
+:local(.rtp-tile) {
+  border: 2px;  
+  border-color: $panel-border-color;
+  border-style: solid;
+  padding: 4px;
+  margin: 4px;
+  border-radius: 5px;
+  display: flex;
+  flex-flow: column;
+  flex: 0 1 auto;
+}
+
+:local(.rtc-panel-button) {
+  @extend %action-button;
+  position: relative;
+  z-index: 10;
+  top: 0px;
+  pointer-events: auto;
+  padding: 0px 0px;
+  font-size: 0.5em;
+  min-width: 100px;
+  height: 20px;
+  border-radius: 2px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  flex: 1 auto;
+  align-self: center;
+}
+
+:local(.rtc-panel-button:disabled) {
+  background-color: $action-color-disabled;
+}
+
+:local(.rtc-tile-text) {
+  color: honeydew;
+  font-size: 10px;
+  display: block;
+  margin: 0;
+  text-align: center;
+}
+
+:local(.rtc-tile-title) {
+  color: $action-color;
+  font-size: 12px;
+  margin: 0;
+  text-align: center;
+  font-weight: bold;
+  display: block;
+}
+
+:local(.rtc-tile-subtitle) {
+  color: honeydew;
+  font-size: 10px;
+  margin: 0;
+  text-align: center;
+  display: block;
+}
+
+:local(.rtc-tile-section) {
+  color: honeydew;
+  font-size: 14px;
+  margin: 0;
+  text-align: center;
+  font-weight: bold;
+  display: block;
+}
+
+:local(.rtc-value-text) {
+  font-size: 10px;
+  margin: 0;
+  color: yellow;
+}
+
+:local(.rtc-log-text) {
+  font-size: 10px;
+  margin: 0;
+}
+
+:local(.rtc-log-level) {
+  @extend :local(.rtc-log-text);
+}
+
+:local(.rtc-log-tag) {
+  @extend :local(.rtc-log-text);
+  color: yellow;
+}
+
+:local(.rtc-log-msg) {
+  @extend :local(.rtc-log-text);
+  color: white;
+}
